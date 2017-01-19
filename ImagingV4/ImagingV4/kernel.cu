@@ -7,6 +7,7 @@
 #include <iostream>
 #include <stdio.h>
 #include "HPT.h"
+#include <vector>
 
 
 using namespace cv;
@@ -90,7 +91,7 @@ void threshold(int threshold, int width, int height, unsigned char * data)
 		}
 	}
 	currentTime = timeTheModification.TimeSinceLastCall();
-	cout << "CPU: " << currentTime << endl;
+	cout << "CPU Threshold: " << currentTime << endl;
 }
 
 bool initializeImageGPU(int width, int height, Mat image)
@@ -155,7 +156,7 @@ bool initializeImageGPU(int width, int height, Mat image)
 	timeTheModification.TimeSinceLastCall();
 	thresholdKernel << <blocksNeeded, 1024 >> > (ImageOriginal, ImageModified, size, 128);
 	currentTime = timeTheModification.TimeSinceLastCall();
-	cout << "GPU: " << currentTime << endl;
+	cout << "GPU Threshold: " << currentTime << endl;
 
 	cudaTest = cudaMemcpy(image.data, ImageModified, size, cudaMemcpyDeviceToHost);
 	if (cudaTest != cudaSuccess) {
@@ -164,9 +165,10 @@ bool initializeImageGPU(int width, int height, Mat image)
 	}
 
 	int thresholdSlider = 50;
-	namedWindow("Display Window", WINDOW_NORMAL);
-	createTrackbar("Threshold", "Display Window", &thresholdSlider, 255, on_trackbar, &image);
+	namedWindow("Blurred Image", WINDOW_NORMAL);
+	//createTrackbar("Threshold", "BlurredImage", &thresholdSlider, 255, on_trackbar, &image);
 	on_trackbar(thresholdSlider, 0);
+	imshow("BlurredImage", image);
 	waitKey(0);
 
 	return temp;
@@ -174,47 +176,113 @@ bool initializeImageGPU(int width, int height, Mat image)
 
 void on_trackbar(int thresholdSlider, void*)
 {
+	uByte*k;
+	uByte* temp;
 	HighPrecisionTime T;
 	double currentTime;
+	trackbarSize = image.cols *image.rows;
 	int blocksNeeded = (trackbarSize + 1023) / 1024;
 	cudaDeviceSynchronize();
 
 	T.TimeSinceLastCall();
-	thresholdKernel << < blocksNeeded, 1024 >> > (image.data, ImageModified, (image.rows*image.cols), thresholdSlider);
+	//thresholdKernel << < blocksNeeded, 1024 >> > (image.data, ImageModified, (image.rows*image.cols), thresholdSlider);
+	BoxFilter(image.data, ImageModified, image.rows, image.cols, k, 3, 3, temp);
 	currentTime = T.TimeSinceLastCall();
 	cout << "CurrentTime: " << currentTime << endl;
+
 
 	if (cudaMemcpy(image.data, ImageModified, trackbarSize, cudaMemcpyDeviceToHost) != cudaSuccess) {
 		cout << "Error copying." << endl;
 	}
+
 	imshow("Display Window", image);
 }
 
 void BoxFilter(uByte * s, uByte * d, int w, int h, uByte * k, int kW, int kH, uByte * Temp)
 {
-	//(s.data, d.data,s.cols, s.rows, k,3,3,temp.data)
-	//int widthMinus1 = w - 1;
-	int size = w*h;
-	size_t xIndex = blockIdx.x * blockDim.x + threadIdx.x;
-	size_t yIndex = blockIdx.y * blockDim.y + threadIdx.y;
+	float currentPixel = 0.0f;
+	for (int i = 1; i < w - 1; i++) {
+		for (int j = 1; j < h - 1; j++) {
+			//set current pixel
+			//c
+			currentPixel = s[i* j];
+			//w-1,h+1
+			currentPixel += s[(i - 1)*(j + 1)];
+			//h+1, w+1
+			currentPixel += s[(i + 1) * (j + 1)];
+			//h+1
+			currentPixel += s[i * (j + 1)];
+			//w-1
+			currentPixel += s[(i - 1) * j];
+			//w+1
+			currentPixel += s[(i + 1) * j];
+			//w-1,h-1
+			currentPixel += s[(i - 1) * (j - 1)];
+			//h-1
+			currentPixel += s[i * (j - 1)];
+			//w+1,h-1
+			currentPixel += s[(i + 1) * (j - 1)];
 
-	int xOffset = w / 2;
-	int yOffset = h / 2;
-
-	float outputValue;
-
-	// Checking to see if the indexs are within the bounds of the image and not on edges
-	if (xIndex < (w - 1) && xIndex >0 && yIndex < h - 1 && yIndex >0)
-	{
-		int xPixel = (xIndex - w / 2 + xIndex + w) % w;
-		int yPixel = (yIndex - h / 2 + yIndex + h) % h;
-
-		for (int i = -xOffset; i <= xOffset; i++) {
-			for (int j = -yOffset; j <= yOffset; j++) {
-				outputValue+=
-			}
-
+			d[i * j] = currentPixel / 9.0f;
 		}
-
 	}
 }
+
+
+
+
+//
+//
+//
+//	float denominator = 0.0f;
+//	vector <int> matrix = { (-(w + 1)), (-w), -(w - 1), -1,0,+1,w - 1,w,w + 1 };
+//
+//	for (int i = 0; i < kW*kH; i++) {
+//		denominator += k[i];
+//	}
+//
+//	if (denominator == 0.0f) {
+//		denominator += 1.0f;
+//	}
+//
+//	for (int i = 1; i < h - 1; i++) {
+//		for (int j = 1; j < w - 1; j++) {
+//
+//		}
+//	}
+//	/*for (int j = 0; j<kernel.cols(); j++) {
+//
+//		double[] m = kernel.get(i, j);
+//
+//		for (int k = 0; k<m.length; k++) {
+//			m[k] = m[k] / (kernelSize * kernelSize);
+//		}
+//		kernel.put(i, j, m);
+//	}*/
+//}
+//	////(s.data, d.data,s.cols, s.rows, k,3,3,temp.data)
+//	////int widthMinus1 = w - 1;
+//	//int size = w*h;
+//	//size_t xIndex = blockIdx.x * blockDim.x + threadIdx.x;
+//	//size_t yIndex = blockIdx.y * blockDim.y + threadIdx.y;
+//
+//	//int xOffset = w / 2;
+//	//int yOffset = h / 2;
+//
+//	//float outputValue;
+//
+//	//// Checking to see if the indexs are within the bounds of the image and not on edges
+//	//if (xIndex < (w - 1) && xIndex >0 && yIndex < h - 1 && yIndex >0)
+//	//{
+//	//	int xPixel = (xIndex - w / 2 + xIndex + w) % w;
+//	//	int yPixel = (yIndex - h / 2 + yIndex + h) % h;
+//
+//	//	for (int i = -xOffset; i <= xOffset; i++) {
+//	//		for (int j = -yOffset; j <= yOffset; j++) {
+//	//			outputValue+=
+//	//		}
+//
+//	//	}
+//
+//	//}
+
